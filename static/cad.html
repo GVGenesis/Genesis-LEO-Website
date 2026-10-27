@@ -1,0 +1,67 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/static/favicon.ico"><link rel="stylesheet" href="/static/style.css"><title>LEO CAD · GVRG</title></head><body><header class="top"><div class="wrap"><a class="brand" href="/"><img src="/static/logo.png" alt="">GVRG</a><nav><a href="/" data-p="/">Handbook</a><a href="/penal-codes" data-p="/penal-codes">Penal codes</a><a href="/cad" data-p="/cad">LEO CAD</a></nav></div></header><script>document.querySelectorAll("nav a").forEach(a=>{if(a.dataset.p===location.pathname)a.classList.add("on")})</script>
+<main><div class="wrap" id="app"><div class="empty">Loading…</div></div></main>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money=n=>"$"+Number(n).toLocaleString(),when=t=>new Date(t).toLocaleString();
+async function api(path,body){
+ const r=await fetch(path,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
+ if(r.status===401||r.status===403){const d=await r.json().catch(()=>({}));showLogin(r.status===403?d.detail:"");throw new Error("auth")}
+ const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.detail==="string"?d.detail:"Check the form and try again.");return d}
+function toast(m){const t=document.createElement("div");t.className="toast";t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3200)}
+const errs={roles:"Your Discord account doesn’t have a law enforcement role. If you were just promoted, wait a minute and try again.",state:"The sign-in expired. Try again.",oauth:"Discord sign-in failed. Try again."};
+function showLogin(msg){const e=new URLSearchParams(location.search).get("error");
+ $("#app").innerHTML='<h1>LEO CAD</h1><p class="lead">Sign in with Discord. Access is limited to members with a law enforcement role.</p>'+((errs[e]||msg)?'<div class="panel err" style="margin:14px 0">'+esc(errs[e]||msg)+'</div>':"")+'<a class="btn pri" href="/login">Sign in with Discord</a>'}
+
+let me,codes=[],draft=null,current=null;
+async function start(){
+ try{me=await api("/api/me")}catch{return}
+ codes=await fetch("/api/penal-codes").then(r=>r.json()).catch(()=>[]);
+ $("#app").innerHTML='<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px"><h1 style="margin:0;font-size:1.6rem">LEO CAD</h1><span style="margin-left:auto;color:var(--mut)">'+esc(me.name)+'</span><a class="btn" href="/logout">Sign out</a></div>'+
+ '<div class="tabs"><button data-t="lookup" class="on">Lookup</button><button data-t="calc">Penal code calculator</button><button data-t="feed">Activity</button></div><div id="tab"></div>';
+ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b));show(b.dataset.t)});
+ show("lookup")}
+function show(t){clearInterval(window.fi);({lookup:lookup,calc:calc,feed:feed})[t]()}
+
+function lookup(){
+ $("#tab").innerHTML='<div class="panel"><label>Find a person by username or Discord ID<input id="s" placeholder="Start typing…" autocomplete="off"></label><div id="res"></div></div><div id="prof" style="margin-top:14px"></div>';
+ let tm;$("#s").oninput=e=>{clearTimeout(tm);tm=setTimeout(async()=>{const q=e.target.value;if(!q.trim()){$("#res").innerHTML="";return}
+  const r=await api("/api/cad/search?q="+encodeURIComponent(q));
+  $("#res").innerHTML=r.length?r.map(u=>'<button class="sm" style="margin:4px 6px 0 0" data-id="'+u.discord_id+'">'+esc(u.username)+'</button>').join(""):'<div class="empty">No profiles match. People get a profile when they join the Discord server.</div>';
+  document.querySelectorAll("#res button").forEach(b=>b.onclick=()=>profile(b.dataset.id))},250)};
+ if(current)profile(current)}
+
+async function profile(id){current=id;const u=await api("/api/cad/profile/"+id);
+ const unpaid=u.citations.filter(c=>c.status==="unpaid").length,act=u.warrants.filter(w=>w.active);
+ $("#prof").innerHTML='<div class="panel who"><img src="'+esc(u.avatar_url||"")+'" alt=""><div><h2 style="margin:0">'+esc(u.username)+'</h2><span style="color:var(--mut)">ID '+u.discord_id+'</span></div>'+
+ '<div style="margin-left:auto;text-align:right"><span class="tag '+(u.is_wanted?"bad":"ok")+'">'+(u.is_wanted?"Wanted":"Not wanted")+'</span> <span class="tag '+(u.license_status==="valid"?"ok":"bad")+'">License '+esc(u.license_status)+'</span></div></div>'+
+ (u.license_note?'<p style="color:var(--mut);margin:8px 0 0">License note: '+esc(u.license_note)+'</p>':"")+
+ '<div class="cols" style="margin-top:14px"><form class="panel" id="fc"><h3>Issue citation</h3><label>Offense<input name="offense" required minlength="2"></label><label>Fine<input name="fine" type="number" min="0" required></label><button class="pri">Issue citation</button> <button type="button" id="usec" class="sm">Use calculator total</button></form>'+
+ '<form class="panel" id="fw"><h3>Issue warrant</h3><label>Reason<input name="reason" required minlength="2"></label><label>Bail<input name="bail" type="number" min="0" value="0" required></label><label>Severity<select name="severity"><option>Low</option><option>Medium</option><option>High</option><option>Felony</option></select></label><button class="pri">Issue warrant</button></form></div>'+
+ '<form class="panel" id="fl" style="margin-top:14px"><h3>Driver license</h3><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><label style="flex:1;min-width:200px;margin:0">Note<input name="note" maxlength="300" placeholder="Reason or length of suspension"></label>'+
+ (u.license_status==="valid"?'<button class="bad" data-s="suspended">Suspend license</button>':'<button class="pri" data-s="valid">Reinstate license</button>')+'</div></form>'+
+ '<div class="panel tw" style="margin-top:14px"><h3>Warrants ('+act.length+' active)</h3>'+(u.warrants.length?'<table><tr><th>#</th><th>Severity</th><th>Reason</th><th>Bail</th><th>Officer</th><th>Date</th><th></th></tr>'+u.warrants.map(w=>'<tr><td>'+w.warrant_id+'</td><td>'+w.severity+'</td><td>'+esc(w.reason)+'</td><td>'+money(w.bail_amount)+'</td><td>'+esc(w.officer_name)+'</td><td>'+when(w.timestamp)+'</td><td>'+(w.active?'<button class="sm" data-w="'+w.warrant_id+'">Clear</button>':'<span class="tag">Cleared</span>')+'</td></tr>').join("")+'</table>':'<div class="empty">No warrants on record.</div>')+'</div>'+
+ '<div class="panel tw" style="margin-top:14px"><h3>Citations ('+unpaid+' unpaid)</h3>'+(u.citations.length?'<table><tr><th>#</th><th>Offense</th><th>Fine</th><th>Status</th><th>Officer</th><th>Date</th></tr>'+u.citations.map(c=>'<tr><td>'+c.citation_id+'</td><td>'+esc(c.offense)+'</td><td>'+money(c.fine_amount)+'</td><td><span class="tag '+(c.status==="paid"?"ok":"warn")+'">'+c.status+'</span></td><td>'+esc(c.officer_name)+'</td><td>'+when(c.timestamp)+'</td></tr>').join("")+'</table>':'<div class="empty">No citations on record.</div>')+'</div>';
+ const reload=()=>profile(id),f=e=>Object.fromEntries(new FormData(e.target));
+ $("#fc").onsubmit=async e=>{e.preventDefault();const d=f(e);try{await api("/api/cad/citations",{user_id:id,offense:d.offense,fine:+d.fine});toast("Citation issued");reload()}catch(x){toast(x.message)}};
+ $("#fw").onsubmit=async e=>{e.preventDefault();const d=f(e);try{await api("/api/cad/warrants",{user_id:id,reason:d.reason,bail:+d.bail,severity:d.severity});toast("Warrant issued");reload()}catch(x){toast(x.message)}};
+ $("#fl").onsubmit=async e=>{e.preventDefault();const s=e.submitter.dataset.s;try{await api("/api/cad/license",{user_id:id,status:s,note:f(e).note||""});toast(s==="valid"?"License reinstated":"License suspended");reload()}catch(x){toast(x.message)}};
+ $("#usec").onclick=()=>{if(!draft)return toast("Build a total in the calculator first.");$("#fc [name=offense]").value=draft.offense;$("#fc [name=fine]").value=draft.fine};
+ document.querySelectorAll("[data-w]").forEach(b=>b.onclick=async()=>{try{await api("/api/cad/warrants/"+b.dataset.w+"/clear",{});toast("Warrant cleared");reload()}catch(x){toast(x.message)}})}
+
+function calc(){
+ if(!codes.length){$("#tab").innerHTML='<div class="panel empty">Penal codes haven’t been added yet. Add them to <code>data/penal_codes.json</code> and redeploy, then the calculator will list them here.</div>';return}
+ const qty={};
+ $("#tab").innerHTML='<div class="cols"><div class="panel"><label>Search charges<input id="cq" placeholder="Code or offense"></label><div class="tw" style="max-height:460px;overflow:auto"><table id="ct"></table></div></div>'+
+ '<div class="panel"><h3>Total</h3><div id="sum"></div><p style="color:var(--mut)">Pick charges on the left. Then open a person in Lookup and use the calculator total in the citation form.</p><button id="clr" class="sm">Clear all</button></div></div>';
+ const draw=()=>{const q=$("#cq").value.toLowerCase();$("#ct").innerHTML='<tr><th>Code</th><th>Offense</th><th>Fine</th><th>Jail</th><th style="width:80px">Count</th></tr>'+codes.filter(c=>(c.code+c.title).toLowerCase().includes(q)).map(c=>'<tr><td>'+esc(c.code)+'</td><td>'+esc(c.title)+'</td><td>'+money(c.fine)+'</td><td>'+c.jail_minutes+' min</td><td><input type="number" min="0" max="20" value="'+(qty[c.code]||0)+'" data-c="'+esc(c.code)+'"></td></tr>').join("");
+  document.querySelectorAll("#ct input").forEach(i=>i.oninput=()=>{qty[i.dataset.c]=Math.max(0,+i.value||0);sum()})};
+ const sum=()=>{let fine=0,jail=0,names=[];codes.forEach(c=>{const n=qty[c.code]||0;if(n){fine+=n*c.fine;jail+=n*c.jail_minutes;names.push(c.code+(n>1?" x"+n:""))}});
+  draft=names.length?{offense:names.join(", "),fine}:null;
+  $("#sum").innerHTML='<p style="font-size:1.6rem;margin:0">'+money(fine)+'</p><p>'+jail+' minutes jail</p><p style="color:var(--mut)">'+(names.length?esc(names.join(", ")):"No charges selected.")+'</p>'};
+ $("#cq").oninput=draw;$("#clr").onclick=()=>{for(const k in qty)delete qty[k];draw();sum()};draw();sum()}
+
+async function feed(){
+ const load=async()=>{const r=await api("/api/cad/feed");$("#tab").innerHTML='<div class="panel tw"><h3>Recent activity</h3>'+(r.length?'<table><tr><th>Time</th><th>Type</th><th>Person</th><th>Detail</th><th>Amount</th><th>Officer</th><th>From</th></tr>'+r.map(x=>'<tr><td>'+when(x.timestamp)+'</td><td>'+x.kind+' #'+x.ref+'</td><td>'+esc(x.username)+'</td><td>'+esc(x.detail)+'</td><td>'+money(x.amount)+'</td><td>'+esc(x.officer_name)+'</td><td><span class="tag">'+x.source+'</span></td></tr>').join("")+'</table>':'<div class="empty">Nothing logged yet. Citations and warrants from Discord and the CAD appear here.</div>')+'</div>'};
+ await load();window.fi=setInterval(()=>load().catch(()=>{}),10000)}
+start();
+</script></body></html>

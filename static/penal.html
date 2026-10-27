@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/static/favicon.ico"><link rel="stylesheet" href="/static/style.css"><title>Penal Codes · GVRG</title></head><body><header class="top"><div class="wrap"><a class="brand" href="/"><img src="/static/logo.png" alt="">GVRG</a><nav><a href="/" data-p="/">Handbook</a><a href="/penal-codes" data-p="/penal-codes">Penal codes</a><a href="/cad" data-p="/cad">LEO CAD</a></nav></div></header><script>document.querySelectorAll("nav a").forEach(a=>{if(a.dataset.p===location.pathname)a.classList.add("on")})</script>
+<main><div class="wrap"><h1>Penal codes</h1><p class="lead">Every charge with its fine and jail time.</p>
+<p><input id="q" type="search" placeholder="Search by code or offense" aria-label="Search penal codes"></p>
+<div class="panel tw" id="out"><div class="empty">Loading…</div></div></div></main>
+<script>
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let all=[];
+function draw(){const q=document.getElementById("q").value.toLowerCase();
+ const rows=all.filter(c=>(c.code+" "+c.title+" "+c.category).toLowerCase().includes(q));
+ document.getElementById("out").innerHTML=!all.length?'<div class="empty">Penal codes haven’t been published yet.</div>':!rows.length?'<div class="empty">No codes match your search.</div>':
+ '<table><tr><th>Code</th><th>Offense</th><th>Category</th><th>Fine</th><th>Jail</th><th>Severity</th></tr>'+rows.map(c=>'<tr><td>'+esc(c.code)+'</td><td>'+esc(c.title)+'</td><td>'+esc(c.category)+'</td><td>$'+c.fine.toLocaleString()+'</td><td>'+c.jail_minutes+' min</td><td>'+esc(c.severity)+'</td></tr>').join("")+'</table>'}
+fetch("/api/penal-codes").then(r=>r.json()).then(d=>{all=d;draw()}).catch(()=>document.getElementById("out").innerHTML='<div class="empty err">Couldn’t load penal codes. Try again shortly.</div>');
+document.getElementById("q").oninput=draw;
+</script></body></html>
